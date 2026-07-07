@@ -119,12 +119,14 @@ struct swappy_state_ui {
   GtkIMContext *im_context;
 
   GtkWidget *area;
+  GtkWidget *ocr_overlay;
 
   GtkToggleButton *panel_toggle_button;
 
   // Undo / Redo
   GtkButton *undo;
   GtkButton *redo;
+  GtkButton *ocr;
 
   // Painting Area
   GtkBox *painting_box;

@@ -42,6 +42,7 @@ pango = dependency('pango')
 math = cc.find_library('m')
 gtk = dependency('gtk+-3.0', version: '>=3.20.0')
 gio = dependency('gio-2.0')
+tesseract = dependency('tesseract')
 
 subdir('res')
 subdir('src/po')
@@ -57,6 +58,7 @@ executable(
 		'src/config.c',
 		'src/clipboard.c',
 		'src/file.c',
+		'src/ocr.c',
 		'src/paint.c',
 		'src/pixbuf.c',
 		'src/render.c',
@@ -68,6 +70,7 @@ executable(
 		gio,
 		gtk,
 		math,
+		tesseract,
 	],
 	link_args: '-rdynamic',
 	include_directories: [swappy_inc],

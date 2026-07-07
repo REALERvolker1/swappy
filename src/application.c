@@ -9,6 +9,7 @@
 #include "clipboard.h"
 #include "config.h"
 #include "file.h"
+#include "ocr.h"
 #include "paint.h"
 #include "pixbuf.h"
 #include "render.h"
@@ -98,6 +99,7 @@ static void action_undo(struct swappy_state *state) {
   GList *first = state->paints;
 
   if (first) {
+    ocr_clear_overlay(state);
     state->paints = g_list_remove_link(state->paints, first);
     state->redo_paints = g_list_prepend(state->redo_paints, first->data);
 
@@ -110,6 +112,7 @@ static void action_redo(struct swappy_state *state) {
   GList *first = state->redo_paints;
 
   if (first) {
+    ocr_clear_overlay(state);
     state->redo_paints = g_list_remove_link(state->redo_paints, first);
     state->paints = g_list_prepend(state->paints, first->data);
 
@@ -119,6 +122,7 @@ static void action_redo(struct swappy_state *state) {
 }
 
 static void action_clear(struct swappy_state *state) {
+  ocr_clear_overlay(state);
   paint_free_all(state);
   render_state(state);
   update_ui_undo_redo(state);
@@ -336,6 +340,7 @@ static void screen_coordinates_to_image_coordinates(struct swappy_state *state,
 }
 
 static void commit_state(struct swappy_state *state) {
+  ocr_clear_overlay(state);
   paint_commit_temporary(state);
   paint_free_list(&state->redo_paints);
   render_state(state);
@@ -381,6 +386,12 @@ void clear_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
   action_clear(state);
 }
 
+void ocr_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
+  // Commit a potential paint before OCR so selectable text matches the surface.
+  commit_state(state);
+  ocr_make_text_selectable(state);
+}
+
 void copy_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
   // Commit a potential paint (e.g. text being written)
   commit_state(state);
@@ -422,8 +433,38 @@ static void clipboard_paste_selection(struct swappy_state *state) {
   }
 }
 
+static gboolean maybe_copy_focused_text_view_selection(
+    struct swappy_state *state) {
+  GtkWidget *focus = gtk_window_get_focus(state->ui->window);
+  GtkTextBuffer *buffer;
+  GtkTextIter start;
+  GtkTextIter end;
+  gchar *text;
+
+  if (!focus || !GTK_IS_TEXT_VIEW(focus)) {
+    return FALSE;
+  }
+
+  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(focus));
+  if (!gtk_text_buffer_get_selection_bounds(buffer, &start, &end)) {
+    return FALSE;
+  }
+
+  text = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
+  gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), text, -1);
+  g_free(text);
+
+  return TRUE;
+}
+
 void window_keypress_handler(GtkWidget *widget, GdkEventKey *event,
                              struct swappy_state *state) {
+  if (event->state & GDK_CONTROL_MASK &&
+      (event->keyval == GDK_KEY_c || event->keyval == GDK_KEY_C) &&
+      maybe_copy_focused_text_view_selection(state)) {
+    return;
+  }
+
   if (state->temp_paint && state->mode == SWAPPY_PAINT_MODE_TEXT) {
     /* ctrl-v: paste */
     if (event->state & GDK_CONTROL_MASK && event->keyval == GDK_KEY_v) {
@@ -614,6 +655,7 @@ void draw_area_button_press_handler(GtkWidget *widget, GdkEventButton *event,
   screen_coordinates_to_image_coordinates(state, event->x, event->y, &x, &y);
 
   if (event->button == 1) {
+    ocr_clear_overlay(state);
     switch (state->mode) {
       case SWAPPY_PAINT_MODE_BLUR:
       case SWAPPY_PAINT_MODE_BRUSH:
@@ -870,9 +912,12 @@ static bool load_layout(struct swappy_state *state) {
 
   state->ui->undo = GTK_BUTTON(gtk_builder_get_object(builder, "undo-button"));
   state->ui->redo = GTK_BUTTON(gtk_builder_get_object(builder, "redo-button"));
+  state->ui->ocr = GTK_BUTTON(gtk_builder_get_object(builder, "ocr-button"));
 
   GtkWidget *area =
       GTK_WIDGET(gtk_builder_get_object(builder, "painting-area"));
+  GtkWidget *ocr_overlay =
+      GTK_WIDGET(gtk_builder_get_object(builder, "ocr-overlay"));
 
   state->ui->painting_box =
       GTK_BOX(gtk_builder_get_object(builder, "painting-box"));
@@ -926,6 +971,7 @@ static bool load_layout(struct swappy_state *state) {
   state->ui->arrow = arrow;
   state->ui->blur = blur;
   state->ui->area = area;
+  state->ui->ocr_overlay = ocr_overlay;
   state->ui->window = window;
 
   compute_window_size_and_scaling_factor(state);
@@ -1092,7 +1138,7 @@ bool application_init(struct swappy_state *state) {
 
   g_application_add_main_option_entries(G_APPLICATION(state->app), cli_options);
 
-  state->ui = g_new(struct swappy_state_ui, 1);
+  state->ui = g_new0(struct swappy_state_ui, 1);
   state->ui->panel_toggled = false;
 
   g_signal_connect(state->app, "command-line", G_CALLBACK(command_line_handler),

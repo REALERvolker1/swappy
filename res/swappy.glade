@@ -22,6 +22,11 @@
     <property name="can_focus">False</property>
     <property name="icon_name">edit-copy-symbolic</property>
   </object>
+  <object class="GtkImage" id="img-ocr-surface">
+    <property name="visible">True</property>
+    <property name="can_focus">False</property>
+    <property name="icon_name">edit-select-all-symbolic</property>
+  </object>
   <object class="GtkImage" id="img-save-surface">
     <property name="visible">True</property>
     <property name="can_focus">False</property>
@@ -716,19 +721,33 @@
                 <property name="halign">center</property>
                 <property name="valign">center</property>
                 <child>
-                  <object class="GtkDrawingArea" id="painting-area">
+                  <object class="GtkOverlay">
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
-                    <property name="events">GDK_POINTER_MOTION_MASK | GDK_BUTTON1_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK</property>
                     <property name="margin_left">10</property>
                     <property name="margin_right">10</property>
                     <property name="margin_top">10</property>
                     <property name="margin_bottom">10</property>
-                    <signal name="button-press-event" handler="draw_area_button_press_handler" swapped="no"/>
-                    <signal name="button-release-event" handler="draw_area_button_release_handler" swapped="no"/>
-                    <signal name="configure-event" handler="draw_area_configure_handler" swapped="no"/>
-                    <signal name="draw" handler="draw_area_handler" swapped="no"/>
-                    <signal name="motion-notify-event" handler="draw_area_motion_notify_handler" swapped="no"/>
+                    <child>
+                      <object class="GtkDrawingArea" id="painting-area">
+                        <property name="visible">True</property>
+                        <property name="can_focus">False</property>
+                        <property name="events">GDK_POINTER_MOTION_MASK | GDK_BUTTON1_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK</property>
+                        <signal name="button-press-event" handler="draw_area_button_press_handler" swapped="no"/>
+                        <signal name="button-release-event" handler="draw_area_button_release_handler" swapped="no"/>
+                        <signal name="configure-event" handler="draw_area_configure_handler" swapped="no"/>
+                        <signal name="draw" handler="draw_area_handler" swapped="no"/>
+                        <signal name="motion-notify-event" handler="draw_area_motion_notify_handler" swapped="no"/>
+                      </object>
+                    </child>
+                    <child type="overlay">
+                      <object class="GtkFixed" id="ocr-overlay">
+                        <property name="visible">False</property>
+                        <property name="can_focus">False</property>
+                        <property name="halign">fill</property>
+                        <property name="valign">fill</property>
+                      </object>
+                    </child>
                   </object>
                 </child>
               </object>
@@ -847,6 +866,22 @@
             <property name="visible">True</property>
             <property name="can_focus">False</property>
             <property name="spacing">5</property>
+            <child>
+              <object class="GtkButton" id="ocr-button">
+                <property name="visible">True</property>
+                <property name="can_focus">False</property>
+                <property name="receives_default">True</property>
+                <property name="tooltip_text" translatable="yes">Make Text Selectable</property>
+                <property name="image">img-ocr-surface</property>
+                <property name="always_show_image">True</property>
+                <signal name="clicked" handler="ocr_clicked_handler" swapped="no"/>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="fill">True</property>
+                <property name="position">0</property>
+              </packing>
+            </child>
             <child>
               <object class="GtkButton" id="copy">
                 <property name="visible">True</property>
