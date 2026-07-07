@@ -71,6 +71,12 @@ static void update_ui_transparent_toggle_button(struct swappy_state *state) {
   gtk_widget_set_sensitive(GTK_WIDGET(state->ui->transparency_plus), toggled);
 }
 
+static void update_ui_ocr_toggle_button(struct swappy_state *state) {
+  gtk_toggle_button_set_active(state->ui->ocr, state->ui->ocr_active);
+  gtk_widget_set_sensitive(GTK_WIDGET(state->ui->painting_box),
+                           !state->ui->ocr_active);
+}
+
 void application_finish(struct swappy_state *state) {
   g_debug("application finishing, cleaning up");
   paint_free_all(state);
@@ -95,11 +101,17 @@ void application_finish(struct swappy_state *state) {
   config_free(state);
 }
 
+static void action_disable_ocr(struct swappy_state *state) {
+  state->ui->ocr_active = false;
+  ocr_clear_overlay(state);
+  update_ui_ocr_toggle_button(state);
+}
+
 static void action_undo(struct swappy_state *state) {
   GList *first = state->paints;
 
   if (first) {
-    ocr_clear_overlay(state);
+    action_disable_ocr(state);
     state->paints = g_list_remove_link(state->paints, first);
     state->redo_paints = g_list_prepend(state->redo_paints, first->data);
 
@@ -112,7 +124,7 @@ static void action_redo(struct swappy_state *state) {
   GList *first = state->redo_paints;
 
   if (first) {
-    ocr_clear_overlay(state);
+    action_disable_ocr(state);
     state->redo_paints = g_list_remove_link(state->redo_paints, first);
     state->paints = g_list_prepend(state->paints, first->data);
 
@@ -122,7 +134,7 @@ static void action_redo(struct swappy_state *state) {
 }
 
 static void action_clear(struct swappy_state *state) {
-  ocr_clear_overlay(state);
+  action_disable_ocr(state);
   paint_free_all(state);
   render_state(state);
   update_ui_undo_redo(state);
@@ -340,7 +352,6 @@ static void screen_coordinates_to_image_coordinates(struct swappy_state *state,
 }
 
 static void commit_state(struct swappy_state *state) {
-  ocr_clear_overlay(state);
   paint_commit_temporary(state);
   paint_free_list(&state->redo_paints);
   render_state(state);
@@ -386,10 +397,22 @@ void clear_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
   action_clear(state);
 }
 
-void ocr_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
+void ocr_toggled_handler(GtkWidget *widget, struct swappy_state *state) {
+  GtkToggleButton *button = GTK_TOGGLE_BUTTON(widget);
+
+  if (!gtk_toggle_button_get_active(button)) {
+    action_disable_ocr(state);
+    return;
+  }
+
   // Commit a potential paint before OCR so selectable text matches the surface.
   commit_state(state);
-  ocr_make_text_selectable(state);
+  if (ocr_make_text_selectable(state)) {
+    state->ui->ocr_active = true;
+  } else {
+    state->ui->ocr_active = false;
+  }
+  update_ui_ocr_toggle_button(state);
 }
 
 void copy_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
@@ -462,6 +485,10 @@ void window_keypress_handler(GtkWidget *widget, GdkEventKey *event,
   if (event->state & GDK_CONTROL_MASK &&
       (event->keyval == GDK_KEY_c || event->keyval == GDK_KEY_C) &&
       maybe_copy_focused_text_view_selection(state)) {
+    return;
+  }
+
+  if (state->ui->ocr_active) {
     return;
   }
 
@@ -652,10 +679,13 @@ void draw_area_button_press_handler(GtkWidget *widget, GdkEventButton *event,
                                     struct swappy_state *state) {
   gdouble x, y;
 
+  if (state->ui->ocr_active) {
+    return;
+  }
+
   screen_coordinates_to_image_coordinates(state, event->x, event->y, &x, &y);
 
   if (event->button == 1) {
-    ocr_clear_overlay(state);
     switch (state->mode) {
       case SWAPPY_PAINT_MODE_BLUR:
       case SWAPPY_PAINT_MODE_BRUSH:
@@ -675,6 +705,10 @@ void draw_area_button_press_handler(GtkWidget *widget, GdkEventButton *event,
 void draw_area_motion_notify_handler(GtkWidget *widget, GdkEventMotion *event,
                                      struct swappy_state *state) {
   gdouble x, y;
+
+  if (state->ui->ocr_active) {
+    return;
+  }
 
   screen_coordinates_to_image_coordinates(state, event->x, event->y, &x, &y);
 
@@ -710,6 +744,10 @@ void draw_area_motion_notify_handler(GtkWidget *widget, GdkEventMotion *event,
 }
 void draw_area_button_release_handler(GtkWidget *widget, GdkEventButton *event,
                                       struct swappy_state *state) {
+  if (state->ui->ocr_active) {
+    return;
+  }
+
   if (!(event->state & GDK_BUTTON1_MASK)) {
     return;
   }
@@ -912,7 +950,8 @@ static bool load_layout(struct swappy_state *state) {
 
   state->ui->undo = GTK_BUTTON(gtk_builder_get_object(builder, "undo-button"));
   state->ui->redo = GTK_BUTTON(gtk_builder_get_object(builder, "redo-button"));
-  state->ui->ocr = GTK_BUTTON(gtk_builder_get_object(builder, "ocr-button"));
+  state->ui->ocr =
+      GTK_TOGGLE_BUTTON(gtk_builder_get_object(builder, "ocr-button"));
 
   GtkWidget *area =
       GTK_WIDGET(gtk_builder_get_object(builder, "painting-area"));
@@ -1039,6 +1078,7 @@ static bool init_gtk_window(struct swappy_state *state) {
   update_ui_panel_toggle_button(state);
   update_ui_fill_shape_toggle_button(state);
   update_ui_transparent_toggle_button(state);
+  update_ui_ocr_toggle_button(state);
 
   return true;
 }
@@ -1140,6 +1180,7 @@ bool application_init(struct swappy_state *state) {
 
   state->ui = g_new0(struct swappy_state_ui, 1);
   state->ui->panel_toggled = false;
+  state->ui->ocr_active = false;
 
   g_signal_connect(state->app, "command-line", G_CALLBACK(command_line_handler),
                    state);

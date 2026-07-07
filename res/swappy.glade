@@ -867,14 +867,15 @@
             <property name="can_focus">False</property>
             <property name="spacing">5</property>
             <child>
-              <object class="GtkButton" id="ocr-button">
+              <object class="GtkToggleButton" id="ocr-button">
                 <property name="visible">True</property>
                 <property name="can_focus">False</property>
+                <property name="focus_on_click">False</property>
                 <property name="receives_default">True</property>
                 <property name="tooltip_text" translatable="yes">Make Text Selectable</property>
                 <property name="image">img-ocr-surface</property>
                 <property name="always_show_image">True</property>
-                <signal name="clicked" handler="ocr_clicked_handler" swapped="no"/>
+                <signal name="toggled" handler="ocr_toggled_handler" swapped="no"/>
               </object>
               <packing>
                 <property name="expand">False</property>

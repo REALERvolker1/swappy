@@ -114,6 +114,7 @@ struct swappy_state_settings {
 
 struct swappy_state_ui {
   gboolean panel_toggled;
+  gboolean ocr_active;
 
   GtkWindow *window;
   GtkIMContext *im_context;
@@ -126,7 +127,7 @@ struct swappy_state_ui {
   // Undo / Redo
   GtkButton *undo;
   GtkButton *redo;
-  GtkButton *ocr;
+  GtkToggleButton *ocr;
 
   // Painting Area
   GtkBox *painting_box;

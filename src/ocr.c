@@ -232,14 +232,14 @@ static guint add_selectable_lines(struct swappy_state *state,
   return lines;
 }
 
-void ocr_make_text_selectable(struct swappy_state *state) {
+gboolean ocr_make_text_selectable(struct swappy_state *state) {
   GtkAllocation alloc;
   GdkPixbuf *pixbuf = NULL;
   TessBaseAPI *api = NULL;
   TessResultIterator *iterator = NULL;
 
   if (!state->rendering_surface || !state->ui || !state->ui->ocr_overlay) {
-    return;
+    return FALSE;
   }
 
   ocr_clear_overlay(state);
@@ -247,21 +247,21 @@ void ocr_make_text_selectable(struct swappy_state *state) {
   pixbuf = pixbuf_get_from_state(state);
   if (!pixbuf) {
     show_ocr_error(state, "Unable to prepare the image for OCR.");
-    return;
+    return FALSE;
   }
 
   api = TessBaseAPICreate();
   if (!api) {
     g_object_unref(pixbuf);
     show_ocr_error(state, "Unable to initialize Tesseract OCR.");
-    return;
+    return FALSE;
   }
 
   if (TessBaseAPIInit3(api, NULL, "eng") != 0) {
     TessBaseAPIDelete(api);
     g_object_unref(pixbuf);
     show_ocr_error(state, "Unable to load Tesseract language data for 'eng'.");
-    return;
+    return FALSE;
   }
 
   TessBaseAPISetPageSegMode(api, PSM_SPARSE_TEXT);
@@ -276,7 +276,7 @@ void ocr_make_text_selectable(struct swappy_state *state) {
     TessBaseAPIDelete(api);
     g_object_unref(pixbuf);
     show_ocr_error(state, "Tesseract OCR failed for this image.");
-    return;
+    return FALSE;
   }
 
   iterator = TessBaseAPIGetIterator(api);
@@ -297,4 +297,5 @@ void ocr_make_text_selectable(struct swappy_state *state) {
   TessBaseAPIEnd(api);
   TessBaseAPIDelete(api);
   g_object_unref(pixbuf);
+  return TRUE;
 }
