@@ -24,6 +24,7 @@ enum swappy_paint_type {
   SWAPPY_PAINT_MODE_ELLIPSE,   /* Ellipse shapes */
   SWAPPY_PAINT_MODE_ARROW,     /* Arrow shapes */
   SWAPPY_PAINT_MODE_BLUR,      /* Blur mode */
+  SWAPPY_PAINT_MODE_CLEAR,     /* Restore the original image in a selection */
 };
 
 enum swappy_paint_shape_operation {
@@ -83,23 +84,34 @@ struct swappy_paint_blur {
   cairo_surface_t *surface;
 };
 
+struct swappy_box {
+  int32_t x;
+  int32_t y;
+  int32_t width;
+  int32_t height;
+};
+
+struct swappy_selection {
+  bool enabled;
+  bool dragging;
+  struct swappy_point anchor;
+  struct swappy_box box;
+  struct swappy_box previous_box;
+};
+
 struct swappy_paint {
   enum swappy_paint_type type;
   bool can_draw;
   bool is_committed;
+  /* Keep the edit's original clip when the selection changes or is disabled. */
+  bool has_clip;
+  struct swappy_box clip;
   union {
     struct swappy_paint_brush brush;
     struct swappy_paint_shape shape;
     struct swappy_paint_text text;
     struct swappy_paint_blur blur;
   } content;
-};
-
-struct swappy_box {
-  int32_t x;
-  int32_t y;
-  int32_t width;
-  int32_t height;
 };
 
 struct swappy_state_settings {
@@ -128,6 +140,8 @@ struct swappy_state_ui {
   GtkButton *undo;
   GtkButton *redo;
   GtkToggleButton *ocr;
+  GtkToggleButton *selection;
+  GtkButton *crop;
 
   // Painting Area
   GtkBox *painting_box;
@@ -199,6 +213,7 @@ struct swappy_state {
   struct swappy_paint *temp_paint;
 
   struct swappy_state_settings settings;
+  struct swappy_selection selection;
 
   int argc;
   char **argv;

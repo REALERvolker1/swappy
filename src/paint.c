@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include "gtk/gtk.h"
+#include "selection.h"
 #include "util.h"
 
 static void cursor_move_backward(struct swappy_paint_text *text) {
@@ -60,7 +61,7 @@ void paint_free_all(struct swappy_state *state) {
 
 void paint_add_temporary(struct swappy_state *state, double x, double y,
                          enum swappy_paint_type type) {
-  struct swappy_paint *paint = g_new(struct swappy_paint, 1);
+  struct swappy_paint *paint = g_new0(struct swappy_paint, 1);
   struct swappy_point *point;
 
   double r = state->settings.r;
@@ -74,6 +75,7 @@ void paint_add_temporary(struct swappy_state *state, double x, double y,
 
   paint->type = type;
   paint->is_committed = false;
+  paint->has_clip = selection_get_box(state, &paint->clip);
 
   g_debug("adding temporary paint at: %.2lfx%.2lf", x, y);
 

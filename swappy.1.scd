@@ -43,6 +43,21 @@ to: *$HOME/Desktop*.
 	Note that the *Save* button will save the image to the config *save_dir*
 	parameter, as described in the DESCRIPTION section.
 
+# RECTANGLE SELECTION
+
+Click *Select*, to the left of OCR, and drag on the image to select a rectangle.
+Paint and text edits are clipped to it. Drag outside the selection to replace it,
+or drag a corner handle to resize it.
+
+OCR, save, and copy use only the selected area. Clear restores that area to the
+original image and can be undone. Turning selection off restores normal editing
+and full-image output. Turning it back on restores the remembered rectangle.
+Closing the window forgets the rectangle.
+
+*Crop to selection*, below *Fill shape* and *Transparent* in the paint panel,
+replaces the image with the selected area, including its edits. Cropping resets
+paint undo history. The selection then covers the entire cropped image.
+
 # CONFIG FILE
 
 The config file is located at *$XDG\_CONFIG\_HOME/swappy/config* or at
@@ -112,7 +127,7 @@ formats are: standard name (one of: https://github.com/rgb-x/system/blob/master/
 - *Equal*: Reset Stroke Size
 - *f*: Toggle Shape Filling
 - *T*: Toggle Transparency
-- `x` `k`: Clear Paints (cannot be undone)
+- `x` `k`: Clear Paints (can be undone when clearing a selection)
 
 ## MODIFIERS
 

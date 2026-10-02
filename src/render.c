@@ -482,7 +482,17 @@ static void render_paint(cairo_t *cr, struct swappy_paint *paint,
   if (!paint->can_draw) {
     return;
   }
+  cairo_save(cr);
+  if (paint->has_clip) {
+    cairo_rectangle(cr, paint->clip.x, paint->clip.y, paint->clip.width,
+                    paint->clip.height);
+    cairo_clip(cr);
+  }
   switch (paint->type) {
+    case SWAPPY_PAINT_MODE_CLEAR:
+      cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+      render_image(cr, state);
+      break;
     case SWAPPY_PAINT_MODE_BLUR:
       render_blur(cr, paint);
       break;
@@ -501,6 +511,7 @@ static void render_paint(cairo_t *cr, struct swappy_paint *paint,
       g_info("unable to render paint with type: %d", paint->type);
       break;
   }
+  cairo_restore(cr);
 }
 
 static void render_paints(cairo_t *cr, struct swappy_state *state) {

@@ -32,6 +32,23 @@ Grab a swappshot from a specific window under Sway, using `swaymsg` and `jq`:
 grim -g "$(swaymsg -t get_tree | jq -r '.. | select(.pid? and .visible?) | .rect | "\(.x),\(.y) \(.width)x\(.height)"' | slurp)" - | swappy -f -
 ```
 
+## Rectangle selection
+
+Click **Select**, to the left of OCR, then drag on the image to select a rectangle.
+Paint and add text inside it. Edits stay clipped to the rectangle even after you
+turn selection off. Drag outside the selection to replace it, or drag a corner
+handle to resize it.
+
+While a rectangle is selected, OCR, save, and copy use only that area. Clear
+restores the selected area to the original image and can be undone. Turning
+selection off restores normal editing and full-image output. Turning it back on
+restores the remembered rectangle. The rectangle is forgotten when you close
+the window.
+
+**Crop to selection**, below **Fill shape** and **Transparent** in the paint
+panel, replaces the image with the selected area, including its edits. Cropping
+resets paint undo history. The selection then covers the entire cropped image.
+
 ## Config
 
 The config file is located at `$XDG_CONFIG_HOME/swappy/config` or at `$HOME/.config/swappy/config`.
@@ -95,7 +112,7 @@ transparency=50
 - `Plus`: Increase Stroke Size
 - `Equal`: Reset Stroke Size
 - `f`: Toggle Shape Filling
-- `x` `k`: Clear Paints (cannot be undone)
+- `x` `k`: Clear Paints (can be undone when clearing a selection)
 - `T`: Toggle Transparency
 
 <hr>

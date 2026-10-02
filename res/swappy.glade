@@ -708,6 +708,23 @@
                     <property name="position">6</property>
                   </packing>
                 </child>
+                <child>
+                  <object class="GtkButton" id="crop-button">
+                    <property name="label" translatable="yes">Crop to selection</property>
+                    <property name="visible">True</property>
+                    <property name="sensitive">False</property>
+                    <property name="can-focus">False</property>
+                    <property name="focus-on-click">False</property>
+                    <property name="receives-default">True</property>
+                    <property name="tooltip-text" translatable="yes">Crop the image to the selection. This resets paint undo history.</property>
+                    <signal name="clicked" handler="crop_clicked_handler" swapped="no"/>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">True</property>
+                    <property name="position">7</property>
+                  </packing>
+                </child>
               </object>
               <packing>
                 <property name="resize">False</property>
@@ -867,6 +884,22 @@
             <property name="can_focus">False</property>
             <property name="spacing">5</property>
             <child>
+              <object class="GtkToggleButton" id="selection-button">
+                <property name="label" translatable="yes">Select</property>
+                <property name="visible">True</property>
+                <property name="can-focus">False</property>
+                <property name="focus-on-click">False</property>
+                <property name="receives-default">True</property>
+                <property name="tooltip-text" translatable="yes">Toggle rectangle selection. Drag outside the selection to replace it, or drag a corner to resize it. Paint inside the selection.</property>
+                <signal name="toggled" handler="selection_toggled_handler" swapped="no"/>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="fill">True</property>
+                <property name="position">0</property>
+              </packing>
+            </child>
+            <child>
               <object class="GtkToggleButton" id="ocr-button">
                 <property name="visible">True</property>
                 <property name="can_focus">False</property>
@@ -880,7 +913,7 @@
               <packing>
                 <property name="expand">False</property>
                 <property name="fill">True</property>
-                <property name="position">0</property>
+                <property name="position">1</property>
               </packing>
             </child>
             <child>
@@ -896,7 +929,7 @@
               <packing>
                 <property name="expand">False</property>
                 <property name="fill">True</property>
-                <property name="position">1</property>
+                <property name="position">2</property>
               </packing>
             </child>
             <child>
@@ -912,7 +945,7 @@
               <packing>
                 <property name="expand">False</property>
                 <property name="fill">True</property>
-                <property name="position">2</property>
+                <property name="position">3</property>
               </packing>
             </child>
           </object>

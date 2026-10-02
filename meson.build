@@ -47,35 +47,57 @@ tesseract = dependency('tesseract')
 subdir('res')
 subdir('src/po')
 
+swappy_sources = files([
+	'src/algebra.c',
+	'src/application.c',
+	'src/box.c',
+	'src/config.c',
+	'src/clipboard.c',
+	'src/file.c',
+	'src/ocr.c',
+	'src/paint.c',
+	'src/pixbuf.c',
+	'src/render.c',
+	'src/selection.c',
+	'src/util.c',
+])
+swappy_dependencies = [
+	cairo,
+	pango,
+	gio,
+	gtk,
+	math,
+	tesseract,
+]
+
 executable(
 	'swappy',
 	swappy_resources,
-	files([
-		'src/main.c',
-		'src/algebra.c',
-		'src/application.c',
-		'src/box.c',
-		'src/config.c',
-		'src/clipboard.c',
-		'src/file.c',
-		'src/ocr.c',
-		'src/paint.c',
-		'src/pixbuf.c',
-		'src/render.c',
-		'src/util.c',
-	]),
-	dependencies: [
-		cairo,
-		pango,
-		gio,
-		gtk,
-		math,
-		tesseract,
-	],
+	swappy_sources,
+	'src/main.c',
+	dependencies: swappy_dependencies,
 	link_args: '-rdynamic',
 	include_directories: [swappy_inc],
 	install: true,
 )
+
+selection_tests = executable(
+	'selection-tests',
+	'test/selection.c',
+	swappy_resources,
+	swappy_sources,
+	dependencies: swappy_dependencies,
+	link_args: '-rdynamic',
+	include_directories: [swappy_inc],
+)
+xvfb_run = find_program('xvfb-run', required: false)
+if xvfb_run.found()
+	test('selection', xvfb_run,
+		args: ['-a', '-s', '-screen 0 1280x1024x24', selection_tests],
+		env: ['GDK_BACKEND=x11'])
+else
+	test('selection', selection_tests)
+endif
 
 scdoc = find_program('scdoc', required: get_option('man-pages'))
 

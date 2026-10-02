@@ -13,7 +13,19 @@
 #include "paint.h"
 #include "pixbuf.h"
 #include "render.h"
+#include "selection.h"
 #include "swappy.h"
+
+static void compute_window_size_and_scaling_factor(struct swappy_state *state);
+static void commit_state(struct swappy_state *state);
+
+static void update_ui_selection(struct swappy_state *state) {
+  struct swappy_box box;
+  gtk_widget_set_sensitive(
+      GTK_WIDGET(state->ui->crop),
+      selection_get_box(state, &box) && !state->selection.dragging);
+  gtk_widget_queue_draw(state->ui->area);
+}
 
 static void update_ui_undo_redo(struct swappy_state *state) {
   GtkWidget *undo = GTK_WIDGET(state->ui->undo);
@@ -135,7 +147,19 @@ static void action_redo(struct swappy_state *state) {
 
 static void action_clear(struct swappy_state *state) {
   action_disable_ocr(state);
-  paint_free_all(state);
+  struct swappy_box box;
+  if (selection_get_box(state, &box)) {
+    commit_state(state);
+    struct swappy_paint *paint = g_new0(struct swappy_paint, 1);
+    paint->type = SWAPPY_PAINT_MODE_CLEAR;
+    paint->can_draw = true;
+    paint->is_committed = true;
+    paint->has_clip = true;
+    paint->clip = box;
+    state->paints = g_list_prepend(state->paints, paint);
+  } else {
+    paint_free_all(state);
+  }
   render_state(state);
   update_ui_undo_redo(state);
 }
@@ -337,18 +361,15 @@ static void screen_coordinates_to_image_coordinates(struct swappy_state *state,
                                                     gdouble screen_y,
                                                     gdouble *image_x,
                                                     gdouble *image_y) {
-  gdouble x, y;
-
   gint w = gdk_pixbuf_get_width(state->original_image);
   gint h = gdk_pixbuf_get_height(state->original_image);
+  GtkAllocation alloc;
+  gtk_widget_get_allocation(state->ui->area, &alloc);
 
   // Clamp coordinates to original image properties to avoid side effects in
   // rendering pipeline
-  x = CLAMP(screen_x / state->scaling_factor, 0, w);
-  y = CLAMP(screen_y / state->scaling_factor, 0, h);
-
-  *image_x = x;
-  *image_y = y;
+  *image_x = CLAMP(screen_x * w / MAX(1, alloc.width), 0, w);
+  *image_y = CLAMP(screen_y * h / MAX(1, alloc.height), 0, h);
 }
 
 static void commit_state(struct swappy_state *state) {
@@ -395,6 +416,40 @@ void save_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
 
 void clear_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
   action_clear(state);
+}
+
+void selection_toggled_handler(GtkWidget *widget, struct swappy_state *state) {
+  commit_state(state);
+  action_disable_ocr(state);
+  if (state->selection.dragging) {
+    state->selection.box = state->selection.previous_box;
+    state->selection.dragging = false;
+  }
+  state->selection.enabled =
+      gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
+  update_ui_selection(state);
+}
+
+void crop_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
+  struct swappy_box box;
+  if (state->selection.dragging || !selection_get_box(state, &box)) {
+    return;
+  }
+
+  commit_state(state);
+  action_disable_ocr(state);
+  if (!pixbuf_crop_to_selection(state)) {
+    return;
+  }
+
+  compute_window_size_and_scaling_factor(state);
+  gtk_widget_set_size_request(state->ui->area, state->window->width,
+                              state->window->height);
+  pixbuf_scale_surface_from_widget(state, state->ui->area);
+  render_state(state);
+  update_ui_undo_redo(state);
+  update_ui_selection(state);
+  gtk_window_resize(state->ui->window, 1, 1);
 }
 
 void ocr_toggled_handler(GtkWidget *widget, struct swappy_state *state) {
@@ -647,18 +702,21 @@ void redo_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
 
 gboolean draw_area_handler(GtkWidget *widget, cairo_t *cr,
                            struct swappy_state *state) {
-  GtkAllocation *alloc = g_new(GtkAllocation, 1);
-  gtk_widget_get_allocation(widget, alloc);
+  GtkAllocation alloc;
+  gtk_widget_get_allocation(widget, &alloc);
 
   GdkPixbuf *image = state->original_image;
   gint image_width = gdk_pixbuf_get_width(image);
   gint image_height = gdk_pixbuf_get_height(image);
-  double scale_x = (double)alloc->width / image_width;
-  double scale_y = (double)alloc->height / image_height;
+  double scale_x = (double)alloc.width / image_width;
+  double scale_y = (double)alloc.height / image_height;
 
+  cairo_save(cr);
   cairo_scale(cr, scale_x, scale_y);
   cairo_set_source_surface(cr, state->rendering_surface, 0, 0);
   cairo_paint(cr);
+  cairo_restore(cr);
+  selection_draw_overlay(state, cr, scale_x, scale_y);
 
   return FALSE;
 }
@@ -686,6 +744,17 @@ void draw_area_button_press_handler(GtkWidget *widget, GdkEventButton *event,
   screen_coordinates_to_image_coordinates(state, event->x, event->y, &x, &y);
 
   if (event->button == 1) {
+    GtkAllocation alloc;
+    gtk_widget_get_allocation(widget, &alloc);
+    double tolerance_x =
+        6.0 * gdk_pixbuf_get_width(state->original_image) / MAX(1, alloc.width);
+    double tolerance_y = 6.0 * gdk_pixbuf_get_height(state->original_image) /
+                         MAX(1, alloc.height);
+    if (selection_begin_drag(state, x, y, tolerance_x, tolerance_y)) {
+      commit_state(state);
+      update_ui_selection(state);
+      return;
+    }
     switch (state->mode) {
       case SWAPPY_PAINT_MODE_BLUR:
       case SWAPPY_PAINT_MODE_BRUSH:
@@ -711,6 +780,12 @@ void draw_area_motion_notify_handler(GtkWidget *widget, GdkEventMotion *event,
   }
 
   screen_coordinates_to_image_coordinates(state, event->x, event->y, &x, &y);
+
+  if (state->selection.dragging) {
+    selection_update_drag(state, x, y);
+    update_ui_selection(state);
+    return;
+  }
 
   GdkDisplay *display = gdk_display_get_default();
   GdkWindow *window = event->window;
@@ -748,7 +823,15 @@ void draw_area_button_release_handler(GtkWidget *widget, GdkEventButton *event,
     return;
   }
 
-  if (!(event->state & GDK_BUTTON1_MASK)) {
+  if (event->button != 1) {
+    return;
+  }
+
+  if (state->selection.dragging) {
+    gdouble x, y;
+    screen_coordinates_to_image_coordinates(state, event->x, event->y, &x, &y);
+    selection_finish_drag(state, x, y);
+    update_ui_selection(state);
     return;
   }
 
@@ -952,6 +1035,9 @@ static bool load_layout(struct swappy_state *state) {
   state->ui->redo = GTK_BUTTON(gtk_builder_get_object(builder, "redo-button"));
   state->ui->ocr =
       GTK_TOGGLE_BUTTON(gtk_builder_get_object(builder, "ocr-button"));
+  state->ui->selection =
+      GTK_TOGGLE_BUTTON(gtk_builder_get_object(builder, "selection-button"));
+  state->ui->crop = GTK_BUTTON(gtk_builder_get_object(builder, "crop-button"));
 
   GtkWidget *area =
       GTK_WIDGET(gtk_builder_get_object(builder, "painting-area"));
@@ -1079,6 +1165,7 @@ static bool init_gtk_window(struct swappy_state *state) {
   update_ui_fill_shape_toggle_button(state);
   update_ui_transparent_toggle_button(state);
   update_ui_ocr_toggle_button(state);
+  update_ui_selection(state);
 
   return true;
 }

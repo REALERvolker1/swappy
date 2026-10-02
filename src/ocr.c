@@ -5,6 +5,7 @@
 #include <tesseract/capi.h>
 
 #include "pixbuf.h"
+#include "selection.h"
 
 #define OCR_TEXT_PADDING 2
 
@@ -159,7 +160,8 @@ static void append_word_to_line(gchar **line_text, const gchar *word) {
 static guint add_selectable_lines(struct swappy_state *state,
                                   TessResultIterator *iterator,
                                   gint image_width, gint image_height,
-                                  gdouble scale_x, gdouble scale_y) {
+                                  gdouble scale_x, gdouble scale_y,
+                                  gint offset_x, gint offset_y) {
   guint lines = 0;
   gchar *line_text = NULL;
   gint line_left = image_width;
@@ -207,8 +209,10 @@ static guint add_selectable_lines(struct swappy_state *state,
 
     if (line_text && TessPageIteratorIsAtFinalElement(page_iterator,
                                                       RIL_TEXTLINE, RIL_WORD)) {
-      add_selectable_text(state, line_text, line_left, line_top, line_right,
-                          line_bottom, line_font_pixels, scale_x, scale_y);
+      add_selectable_text(state, line_text, line_left + offset_x,
+                          line_top + offset_y, line_right + offset_x,
+                          line_bottom + offset_y, line_font_pixels, scale_x,
+                          scale_y);
       g_free(line_text);
       line_text = NULL;
       line_left = image_width;
@@ -223,8 +227,10 @@ static guint add_selectable_lines(struct swappy_state *state,
   } while (TessResultIteratorNext(iterator, RIL_WORD));
 
   if (line_text) {
-    add_selectable_text(state, line_text, line_left, line_top, line_right,
-                        line_bottom, line_font_pixels, scale_x, scale_y);
+    add_selectable_text(state, line_text, line_left + offset_x,
+                        line_top + offset_y, line_right + offset_x,
+                        line_bottom + offset_y, line_font_pixels, scale_x,
+                        scale_y);
     g_free(line_text);
     lines++;
   }
@@ -284,10 +290,15 @@ gboolean ocr_make_text_selectable(struct swappy_state *state) {
     gtk_widget_get_allocation(state->ui->area, &alloc);
     gint image_width = gdk_pixbuf_get_width(pixbuf);
     gint image_height = gdk_pixbuf_get_height(pixbuf);
-    gdouble scale_x = (gdouble)alloc.width / image_width;
-    gdouble scale_y = (gdouble)alloc.height / image_height;
-    guint lines = add_selectable_lines(state, iterator, image_width,
-                                       image_height, scale_x, scale_y);
+    gdouble scale_x =
+        (gdouble)alloc.width / gdk_pixbuf_get_width(state->original_image);
+    gdouble scale_y =
+        (gdouble)alloc.height / gdk_pixbuf_get_height(state->original_image);
+    struct swappy_box box = {0};
+    selection_get_box(state, &box);
+    guint lines =
+        add_selectable_lines(state, iterator, image_width, image_height,
+                             scale_x, scale_y, box.x, box.y);
 
     if (lines > 0) {
       gtk_widget_show(state->ui->ocr_overlay);
