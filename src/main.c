@@ -4,6 +4,8 @@
 #include "config.h"
 
 int main(int argc, char *argv[]) {
+  /* Prefer the desktop's portal chooser outside sandboxes as well. */
+  g_setenv("GTK_USE_PORTAL", "1", FALSE);
   struct swappy_state state = {0};
   int status;
 

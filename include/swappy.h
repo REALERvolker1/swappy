@@ -202,6 +202,8 @@ struct swappy_state {
   /* Options */
   char *file_str;
   char *output_file;
+  char *save_file;
+  GtkFileChooserNative *save_dialog;
 
   char *temp_file_str;
 

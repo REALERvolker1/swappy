@@ -61,6 +61,11 @@ static void setup(struct fixture *fixture, gconstpointer data) {
 
 static void teardown(struct fixture *fixture, gconstpointer data) {
   struct swappy_state *state = &fixture->state;
+  if (state->save_dialog) {
+    gtk_native_dialog_destroy(GTK_NATIVE_DIALOG(state->save_dialog));
+    g_clear_object(&state->save_dialog);
+  }
+  g_free(state->save_file);
   gtk_widget_destroy(GTK_WIDGET(state->ui->window));
   paint_free_all(state);
   pixbuf_free(state);
@@ -308,6 +313,77 @@ static void test_save_and_copy(struct fixture *fixture, gconstpointer data) {
   g_free(parent);
 }
 
+static void test_save_as(struct fixture *fixture, gconstpointer data) {
+  struct swappy_state *state = &fixture->state;
+  gchar *directory = g_dir_make_tmp("swappy-save-as-XXXXXX", NULL);
+  g_assert_nonnull(directory);
+  gchar *path = g_build_filename(directory, "chosen.png", NULL);
+  fixture->config.save_dir = directory;
+  fixture->config.save_filename_format = "default.png";
+  g_assert_cmpstr(gtk_button_get_label(GTK_BUTTON(widget(fixture, "save"))), ==,
+                  "Save");
+  g_assert_true(gtk_menu_button_get_popup(
+                    GTK_MENU_BUTTON(widget(fixture, "save-dropdown"))) ==
+                GTK_MENU(widget(fixture, "save-menu")));
+
+  gtk_menu_item_activate(GTK_MENU_ITEM(widget(fixture, "save-as")));
+  g_assert_nonnull(state->save_dialog);
+  g_assert_true(gtk_file_chooser_get_do_overwrite_confirmation(
+      GTK_FILE_CHOOSER(state->save_dialog)));
+  g_signal_emit_by_name(state->save_dialog, "response", GTK_RESPONSE_CANCEL);
+  g_assert_null(state->save_dialog);
+  g_assert_null(state->save_file);
+  g_assert_false(g_file_test(path, G_FILE_TEST_EXISTS));
+
+  set_selection(fixture);
+  save_as_clicked_handler(NULL, state);
+  gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(state->save_dialog),
+                                    "chosen.png");
+  /* The fallback chooser loads its current folder asynchronously. */
+  gint64 deadline = g_get_monotonic_time() + 2 * G_TIME_SPAN_SECOND;
+  gchar *selected = NULL;
+  do {
+    drain_events();
+    g_free(selected);
+    selected =
+        gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(state->save_dialog));
+    if (g_strcmp0(selected, path) == 0) {
+      break;
+    }
+    g_usleep(1000);
+  } while (g_get_monotonic_time() < deadline);
+  g_assert_cmpstr(selected, ==, path);
+  g_free(selected);
+  g_signal_emit_by_name(state->save_dialog, "response", GTK_RESPONSE_ACCEPT);
+  g_assert_null(state->save_dialog);
+  g_assert_cmpstr(state->save_file, ==, path);
+  GError *error = NULL;
+  GdkPixbuf *saved = gdk_pixbuf_new_from_file(path, &error);
+  g_assert_no_error(error);
+  g_assert_cmpint(gdk_pixbuf_get_width(saved), ==, 120);
+  g_assert_cmpint(gdk_pixbuf_get_height(saved), ==, 100);
+  g_object_unref(saved);
+
+  save_as_clicked_handler(NULL, state);
+  g_signal_emit_by_name(state->save_dialog, "response", GTK_RESPONSE_CANCEL);
+  g_assert_cmpstr(state->save_file, ==, path);
+  gtk_toggle_button_set_active(fixture->ui.selection, FALSE);
+  save_clicked_handler(NULL, state);
+  saved = gdk_pixbuf_new_from_file(path, &error);
+  g_assert_no_error(error);
+  g_assert_cmpint(gdk_pixbuf_get_width(saved), ==, 320);
+  g_assert_cmpint(gdk_pixbuf_get_height(saved), ==, 200);
+  g_object_unref(saved);
+  g_assert_cmpint(g_remove(path), ==, 0);
+  GdkEventKey key = {.state = GDK_CONTROL_MASK, .keyval = GDK_KEY_s};
+  window_keypress_handler(NULL, &key, state);
+  g_assert_true(g_file_test(path, G_FILE_TEST_IS_REGULAR));
+  g_assert_cmpint(g_remove(path), ==, 0);
+  g_assert_cmpint(g_rmdir(directory), ==, 0);
+  g_free(path);
+  g_free(directory);
+}
+
 static void test_ocr_offset(struct fixture *fixture, gconstpointer data) {
   struct swappy_state *state = &fixture->state;
   TessBaseAPI *api = TessBaseAPICreate();
@@ -360,6 +436,9 @@ int main(int argc, char **argv) {
   /* Copy falls back to the isolated Xvfb clipboard, never the user's Wayland
    * session. */
   g_setenv("WAYLAND_DISPLAY", "swappy-tests-no-display", TRUE);
+  /* Exercise the chooser without opening dialogs on the user's desktop. */
+  g_setenv("GTK_USE_PORTAL", "0", TRUE);
+  g_setenv("GSETTINGS_BACKEND", "memory", TRUE);
   g_test_init(&argc, &argv, NULL);
   gtk_init(&argc, &argv);
   g_test_add("/selection/drag-and-toggle", struct fixture, NULL, setup,
@@ -378,5 +457,6 @@ int main(int argc, char **argv) {
              test_save_and_copy, teardown);
   g_test_add("/selection/ocr-offset", struct fixture, NULL, setup,
              test_ocr_offset, teardown);
+  g_test_add("/save/as", struct fixture, NULL, setup, test_save_as, teardown);
   return g_test_run();
 }

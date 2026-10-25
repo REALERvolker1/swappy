@@ -91,6 +91,11 @@ static void update_ui_ocr_toggle_button(struct swappy_state *state) {
 
 void application_finish(struct swappy_state *state) {
   g_debug("application finishing, cleaning up");
+  if (state->save_dialog) {
+    gtk_native_dialog_destroy(GTK_NATIVE_DIALOG(state->save_dialog));
+    g_clear_object(&state->save_dialog);
+  }
+  g_free(state->save_file);
   paint_free_all(state);
   pixbuf_free(state);
   cairo_surface_destroy(state->rendering_surface);
@@ -411,7 +416,71 @@ void blur_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
 void save_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
   // Commit a potential paint (e.g. text being written)
   commit_state(state);
-  save_state_to_file_or_folder(state, NULL);
+  save_state_to_file_or_folder(state, state->save_file);
+}
+
+static void save_as_response(GtkNativeDialog *dialog, gint response,
+                             struct swappy_state *state) {
+  if (response == GTK_RESPONSE_ACCEPT) {
+    char *file = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+    GError *error = NULL;
+    commit_state(state);
+    GdkPixbuf *pixbuf = pixbuf_get_from_state(state);
+    if (file && gdk_pixbuf_savev(pixbuf, file, "png", NULL, NULL, &error)) {
+      g_free(state->save_file);
+      state->save_file = g_steal_pointer(&file);
+      if (state->config->early_exit) {
+        gtk_main_quit();
+      }
+    } else {
+      GtkWidget *message = gtk_message_dialog_new(
+          state->ui->window, GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+          GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s", "Unable to save image");
+      gtk_message_dialog_format_secondary_text(
+          GTK_MESSAGE_DIALOG(message), "%s",
+          error ? error->message
+                : "The selected location is not a local file.");
+      g_signal_connect_swapped(message, "response",
+                               G_CALLBACK(gtk_widget_destroy), message);
+      gtk_widget_show(message);
+      g_clear_error(&error);
+    }
+    g_free(file);
+    g_object_unref(pixbuf);
+  }
+  gtk_native_dialog_destroy(dialog);
+  g_clear_object(&state->save_dialog);
+}
+
+void save_as_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
+  if (state->save_dialog) {
+    return;
+  }
+  state->save_dialog = gtk_file_chooser_native_new("Save As", state->ui->window,
+                                                   GTK_FILE_CHOOSER_ACTION_SAVE,
+                                                   "Save", "Cancel");
+  GtkFileChooser *chooser = GTK_FILE_CHOOSER(state->save_dialog);
+  gtk_file_chooser_set_do_overwrite_confirmation(chooser, TRUE);
+  gtk_native_dialog_set_modal(GTK_NATIVE_DIALOG(state->save_dialog), TRUE);
+  if (state->save_file) {
+    gtk_file_chooser_set_filename(chooser, state->save_file);
+  } else {
+    time_t now = time(NULL);
+    char filename[255];
+    if (!strftime(filename, sizeof(filename),
+                  state->config->save_filename_format, localtime(&now))) {
+      g_strlcpy(filename, "swappy.png", sizeof(filename));
+    }
+    gtk_file_chooser_set_current_folder(chooser, state->config->save_dir);
+    gtk_file_chooser_set_current_name(chooser, filename);
+  }
+  GtkFileFilter *filter = gtk_file_filter_new();
+  gtk_file_filter_set_name(filter, "PNG image");
+  gtk_file_filter_add_mime_type(filter, "image/png");
+  gtk_file_chooser_add_filter(chooser, filter);
+  g_signal_connect(state->save_dialog, "response", G_CALLBACK(save_as_response),
+                   state);
+  gtk_native_dialog_show(GTK_NATIVE_DIALOG(state->save_dialog));
 }
 
 void clear_clicked_handler(GtkWidget *widget, struct swappy_state *state) {
@@ -563,7 +632,7 @@ void window_keypress_handler(GtkWidget *widget, GdkEventKey *event,
         clipboard_copy_drawing_area_to_selection(state);
         break;
       case GDK_KEY_s:
-        save_state_to_file_or_folder(state, NULL);
+        save_clicked_handler(NULL, state);
         break;
       case GDK_KEY_b:
         action_toggle_painting_panel(state, NULL);

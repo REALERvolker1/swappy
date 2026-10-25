@@ -27,10 +27,14 @@
     <property name="can_focus">False</property>
     <property name="icon_name">edit-select-all-symbolic</property>
   </object>
-  <object class="GtkImage" id="img-save-surface">
-    <property name="visible">True</property>
-    <property name="can_focus">False</property>
-    <property name="icon_name">document-save-symbolic</property>
+  <object class="GtkMenu" id="save-menu">
+    <child>
+      <object class="GtkMenuItem" id="save-as">
+        <property name="visible">True</property>
+        <property name="label" translatable="yes">Save As…</property>
+        <signal name="activate" handler="save_as_clicked_handler" swapped="no"/>
+      </object>
+    </child>
   </object>
   <object class="GtkImage" id="img-toggle-panel">
     <property name="visible">True</property>
@@ -933,14 +937,26 @@
               </packing>
             </child>
             <child>
-              <object class="GtkButton" id="save">
+              <object class="GtkBox" id="save-buttons">
                 <property name="visible">True</property>
-                <property name="can_focus">False</property>
-                <property name="receives_default">True</property>
-                <property name="tooltip_text" translatable="yes">Save Surface</property>
-                <property name="image">img-save-surface</property>
-                <property name="always_show_image">True</property>
-                <signal name="clicked" handler="save_clicked_handler" swapped="no"/>
+                <style>
+                  <class name="linked"/>
+                </style>
+                <child>
+                  <object class="GtkButton" id="save">
+                    <property name="visible">True</property>
+                    <property name="label" translatable="yes">Save</property>
+                    <property name="tooltip_text" translatable="yes">Save Surface</property>
+                    <signal name="clicked" handler="save_clicked_handler" swapped="no"/>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkMenuButton" id="save-dropdown">
+                    <property name="visible">True</property>
+                    <property name="tooltip_text" translatable="yes">More save options</property>
+                    <property name="popup">save-menu</property>
+                  </object>
+                </child>
               </object>
               <packing>
                 <property name="expand">False</property>

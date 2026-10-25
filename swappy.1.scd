@@ -42,6 +42,10 @@ to: *$HOME/Desktop*.
 
 	Note that the *Save* button will save the image to the config *save_dir*
 	parameter, as described in the DESCRIPTION section.
+	Use the arrow beside *Save* and choose *Save As…* to select a PNG file
+	with the desktop save dialog. After saving, *Save* and *Ctrl+s* update
+	that file for the rest of the session. Cancelling leaves the save target
+	unchanged. The *-o* option and automatic saving on exit are unaffected.
 
 # RECTANGLE SELECTION
 

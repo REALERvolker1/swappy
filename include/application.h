@@ -37,6 +37,7 @@ void blur_clicked_handler(GtkWidget *widget, struct swappy_state *state);
 
 void copy_clicked_handler(GtkWidget *widget, struct swappy_state *state);
 void save_clicked_handler(GtkWidget *widget, struct swappy_state *state);
+void save_as_clicked_handler(GtkWidget *widget, struct swappy_state *state);
 void clear_clicked_handler(GtkWidget *widget, struct swappy_state *state);
 void ocr_toggled_handler(GtkWidget *widget, struct swappy_state *state);
 void selection_toggled_handler(GtkWidget *widget, struct swappy_state *state);
