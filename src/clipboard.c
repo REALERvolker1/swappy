@@ -1,90 +1,21 @@
 #include "clipboard.h"
-
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
 #include "pixbuf.h"
-#include "util.h"
-
-#define gtk_clipboard_t GtkClipboard
-#define gdk_pixbuf_t GdkPixbuf
-
-static gboolean send_pixbuf_to_wl_copy(gdk_pixbuf_t *pixbuf) {
-  pid_t clipboard_process = 0;
-  int pipefd[2];
-  int status;
-  ssize_t written;
-  gsize size;
-  gchar *buffer = NULL;
-  GError *error = NULL;
-
-  if (pipe(pipefd) < 0) {
-    g_warning("unable to pipe for copy process to work");
-    return false;
-  }
-  clipboard_process = fork();
-  if (clipboard_process == -1) {
-    g_warning("unable to fork process for copy");
-    return false;
-  }
-  if (clipboard_process == 0) {
-    close(pipefd[1]);
-    dup2(pipefd[0], STDIN_FILENO);
-    close(pipefd[0]);
-    execlp("wl-copy", "wl-copy", "-t", "image/png", NULL);
-    g_warning(
-        "Unable to copy contents to clipboard. Please make sure you have "
-        "`wl-clipboard`, `xclip`, or `xsel` installed.");
-    exit(1);
-  }
-  close(pipefd[0]);
-
-  gdk_pixbuf_save_to_buffer(pixbuf, &buffer, &size, "png", &error, NULL);
-
-  if (error != NULL) {
-    g_critical("unable to save pixbuf to buffer for copy: %s", error->message);
-    g_error_free(error);
-    return false;
-  }
-
-  written = write(pipefd[1], buffer, size);
-  if (written == -1) {
-    g_warning("unable to write to pipe fd for copy");
-    g_free(buffer);
-    return false;
-  }
-
-  close(pipefd[1]);
-  g_free(buffer);
-  waitpid(clipboard_process, &status, 0);
-
-  if (WIFEXITED(status)) {
-    return WEXITSTATUS(status) == 0;  // Make sure the child exited properly
-  }
-
-  return false;
+#include <gio/gio.h>
+static gboolean send_png(const gchar *data,gsize size,gboolean wayland){
+ GError *e=NULL;GSubprocess *p=wayland?
+ g_subprocess_new(G_SUBPROCESS_FLAGS_STDIN_PIPE,&e,"wl-copy","-t","image/png",NULL):
+ g_subprocess_new(G_SUBPROCESS_FLAGS_STDIN_PIPE,&e,"xclip","-selection","clipboard","-t","image/png",NULL);
+ if(!p){g_clear_error(&e);return FALSE;}
+ GBytes *b=g_bytes_new(data,size);
+ gboolean ok=g_subprocess_communicate(p,b,NULL,NULL,NULL,&e)&&g_subprocess_get_successful(p);
+ g_bytes_unref(b);g_object_unref(p);g_clear_error(&e);return ok;
 }
-
-static void send_pixbuf_to_gdk_clipboard(gdk_pixbuf_t *pixbuf) {
-  gtk_clipboard_t *clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
-  gtk_clipboard_set_image(clipboard, pixbuf);
-  gtk_clipboard_store(clipboard);  // Does not work for Wayland gdk backend
-}
-
-bool clipboard_copy_drawing_area_to_selection(struct swappy_state *state) {
-  gdk_pixbuf_t *pixbuf = pixbuf_get_from_state(state);
-
-  // Try `wl-copy` first and fall back to gtk function. See README.md.
-  if (!send_pixbuf_to_wl_copy(pixbuf)) {
-    send_pixbuf_to_gdk_clipboard(pixbuf);
-  }
-
-  g_object_unref(pixbuf);
-
-  if (state->config->early_exit) {
-    gtk_main_quit();
-  }
-
-  return true;
+bool clipboard_copy_drawing_area_to_selection(struct swappy_state *s){
+ GdkPixbuf *p=pixbuf_get_from_state(s);if(!p)return false;
+ gchar *data=NULL;gsize size=0;GError *e=NULL;
+ gboolean ok=gdk_pixbuf_save_to_buffer(p,&data,&size,"png",&e,NULL);
+ if(ok)ok=send_png(data,size,TRUE)||send_png(data,size,FALSE);
+ g_free(data);g_object_unref(p);g_clear_error(&e);
+ if(ok&&s->config->early_exit)Rquit(0);
+ return ok;
 }
