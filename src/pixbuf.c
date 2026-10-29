@@ -1,173 +1,75 @@
 #include "pixbuf.h"
-
-#include <cairo/cairo.h>
-#include <gio/gunixoutputstream.h>
-
 #include "paint.h"
 #include "selection.h"
-
-GdkPixbuf *pixbuf_get_from_state(struct swappy_state *state) {
-  struct swappy_box box;
-  if (!selection_get_box(state, &box)) {
-    box = (struct swappy_box){
-        0, 0, cairo_image_surface_get_width(state->rendering_surface),
-        cairo_image_surface_get_height(state->rendering_surface)};
-  }
-  GdkPixbuf *pixbuf = gdk_pixbuf_get_from_surface(
-      state->rendering_surface, box.x, box.y, box.width, box.height);
-
-  return pixbuf;
+#include <gio/gunixoutputstream.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+static GdkPixbuf *to_pixbuf(cairo_surface_t *surface,int x,int y,int w,int h){
+ if(!surface||w<=0||h<=0)return NULL;
+ cairo_surface_flush(surface);
+ GdkPixbuf *pix=gdk_pixbuf_new(GDK_COLORSPACE_RGB,TRUE,8,w,h);
+ const unsigned char *src=cairo_image_surface_get_data(surface);
+ unsigned char *dst=gdk_pixbuf_get_pixels(pix);
+ int ss=cairo_image_surface_get_stride(surface),ds=gdk_pixbuf_get_rowstride(pix);
+ for(int j=0;j<h;j++)for(int i=0;i<w;i++){
+  uint32_t v=((const uint32_t*)(src+(j+y)*ss))[i+x];
+  unsigned a=(v>>24)&255;
+  unsigned char *p=dst+j*ds+i*4;
+  for(int c=0;c<3;c++){unsigned z=(v>>(16-c*8))&255;p[c]=a?MIN(255,(z*255+a/2)/a):0;}
+  p[3]=a;
+ }
+ return pix;
 }
-
-gboolean pixbuf_crop_to_selection(struct swappy_state *state) {
-  struct swappy_box box;
-  if (!selection_get_box(state, &box)) {
-    return FALSE;
-  }
-
-  GdkPixbuf *cropped = pixbuf_get_from_state(state);
-  if (!cropped) {
-    return FALSE;
-  }
-
-  /* Edits are baked into the new base image; their old coordinates no longer
-   * describe this canvas. */
-  paint_free_all(state);
-  g_object_unref(state->original_image);
-  state->original_image = cropped;
-  state->selection.box = (struct swappy_box){0, 0, box.width, box.height};
-  state->selection.dragging = false;
-  state->selection.previous_box = state->selection.box;
-  return TRUE;
+GdkPixbuf *pixbuf_get_from_state(struct swappy_state *s){
+ struct swappy_box b;
+ if(!selection_get_box(s,&b))b=(struct swappy_box){0,0,cairo_image_surface_get_width(s->rendering_surface),cairo_image_surface_get_height(s->rendering_surface)};
+ return to_pixbuf(s->rendering_surface,b.x,b.y,b.width,b.height);
 }
-
-static void write_file(GdkPixbuf *pixbuf, char *path) {
-  GError *error = NULL;
-  gdk_pixbuf_savev(pixbuf, path, "png", NULL, NULL, &error);
-
-  if (error != NULL) {
-    g_critical("unable to save drawing area to pixbuf: %s", error->message);
-    g_error_free(error);
-  }
+void pixbuf_create_surfaces(struct swappy_state *s){
+ if(s->original_image_surface)cairo_surface_destroy(s->original_image_surface);
+ if(s->rendering_surface)cairo_surface_destroy(s->rendering_surface);
+ int w=gdk_pixbuf_get_width(s->original_image),h=gdk_pixbuf_get_height(s->original_image),n=gdk_pixbuf_get_n_channels(s->original_image);
+ s->original_image_surface=cairo_image_surface_create(CAIRO_FORMAT_ARGB32,w,h);
+ s->rendering_surface=cairo_image_surface_create(CAIRO_FORMAT_ARGB32,w,h);
+ unsigned char *dst=cairo_image_surface_get_data(s->original_image_surface);
+ const unsigned char *src=gdk_pixbuf_read_pixels(s->original_image);
+ int ss=gdk_pixbuf_get_rowstride(s->original_image),ds=cairo_image_surface_get_stride(s->original_image_surface);
+ for(int y=0;y<h;y++)for(int x=0;x<w;x++){
+  const unsigned char *p=src+y*ss+x*n;unsigned a=n==4?p[3]:255;
+  ((uint32_t*)(dst+y*ds))[x]=(a<<24)|(((p[0]*a+127)/255)<<16)|(((p[1]*a+127)/255)<<8)|((p[2]*a+127)/255);
+ }
+ cairo_surface_mark_dirty(s->original_image_surface);
 }
-
-void pixbuf_save_state_to_folder(GdkPixbuf *pixbuf, char *folder,
-                                 char *filename_format) {
-  time_t current_time = time(NULL);
-  char *c_time_string;
-  char filename[255];
-  char path[MAX_PATH];
-  size_t bytes_formated;
-
-  c_time_string = ctime(&current_time);
-  c_time_string[strlen(c_time_string) - 1] = '\0';
-  bytes_formated = strftime(filename, sizeof(filename), filename_format,
-                            localtime(&current_time));
-  if (!bytes_formated) {
-    g_warning(
-        "filename_format: %s overflows filename limit - file cannot be saved",
-        filename_format);
-    return;
-  }
-
-  g_snprintf(path, MAX_PATH, "%s/%s", folder, filename);
-  g_info("saving surface to path: %s", path);
-  write_file(pixbuf, path);
+void pixbuf_upload_texture(struct swappy_state *s){
+ int w=cairo_image_surface_get_width(s->rendering_surface),h=cairo_image_surface_get_height(s->rendering_surface);
+ GdkPixbuf *p=to_pixbuf(s->rendering_surface,0,0,w,h);if(!p)return;
+ unsigned char *rgba=g_malloc((size_t)w*h*4);
+ for(int j=0;j<h;j++)memcpy(rgba+(size_t)j*w*4,gdk_pixbuf_get_pixels(p)+(size_t)j*gdk_pixbuf_get_rowstride(p),(size_t)w*4);
+ if(Rtexture_is_valid(s->image_texture))Rtexture_update(s->image_texture,rgba,w,h);
+ else s->image_texture=Rtexture_create_from_pixels(rgba,w,h);
+ g_free(rgba);g_object_unref(p);
+ if(s->ui&&Rwindow_is_valid(s->ui->window))Rwindow_request_redraw(s->ui->window);
 }
-
-void pixbuf_save_to_stdout(GdkPixbuf *pixbuf) {
-  GOutputStream *out;
-  GError *error = NULL;
-
-  out = g_unix_output_stream_new(STDOUT_FILENO, TRUE);
-
-  gdk_pixbuf_save_to_stream(pixbuf, out, "png", NULL, &error, NULL);
-
-  if (error != NULL) {
-    g_warning("unable to save surface to stdout: %s", error->message);
-    g_error_free(error);
-    return;
-  }
-
-  g_object_unref(out);
+gboolean pixbuf_crop_to_selection(struct swappy_state *s){
+ struct swappy_box b;if(!selection_get_box(s,&b))return FALSE;
+ GdkPixbuf *p=pixbuf_get_from_state(s);if(!p)return FALSE;
+ paint_free_all(s);g_object_unref(s->original_image);s->original_image=p;
+ s->selection.box=(struct swappy_box){0,0,b.width,b.height};s->selection.previous_box=s->selection.box;
+ pixbuf_create_surfaces(s);return TRUE;
 }
-
-GdkPixbuf *pixbuf_init_from_file(struct swappy_state *state) {
-  GError *error = NULL;
-  char *file =
-      state->temp_file_str != NULL ? state->temp_file_str : state->file_str;
-  GdkPixbuf *image = gdk_pixbuf_new_from_file(file, &error);
-
-  if (error != NULL) {
-    g_printerr("unable to load file: %s - reason: %s\n", file, error->message);
-    g_error_free(error);
-    return NULL;
-  }
-
-  state->original_image = image;
-  return image;
+static void write_image(GdkPixbuf *p,const char *path){GError *e=NULL;if(!gdk_pixbuf_save(p,path,"png",&e,NULL)){g_warning("Save failed: %s",e?e->message:"unknown");g_clear_error(&e);}}
+void pixbuf_save_to_stdout(GdkPixbuf *p){GError *e=NULL;GOutputStream *out=g_unix_output_stream_new(STDOUT_FILENO,FALSE);gdk_pixbuf_save_to_stream(p,out,"png",NULL,&e,NULL);g_clear_error(&e);g_object_unref(out);}
+void pixbuf_save_to_file(GdkPixbuf *p,char *path){if(!strcmp(path,"-"))pixbuf_save_to_stdout(p);else write_image(p,path);}
+void pixbuf_save_state_to_folder(GdkPixbuf *p,char *folder,char *format){
+ if(!p||!folder||!format)return;
+ char name[256];time_t now=time(NULL);
+ if(!strftime(name,sizeof(name),format,localtime(&now)))return;
+ char *path=g_build_filename(folder,name,NULL);write_image(p,path);g_free(path);
 }
-
-void pixbuf_save_to_file(GdkPixbuf *pixbuf, char *file) {
-  if (g_strcmp0(file, "-") == 0) {
-    pixbuf_save_to_stdout(pixbuf);
-  } else {
-    write_file(pixbuf, file);
-  }
+GdkPixbuf *pixbuf_init_from_file(struct swappy_state *s){
+ GError *e=NULL;s->original_image=gdk_pixbuf_new_from_file(s->temp_file_str?s->temp_file_str:s->file_str,&e);
+ if(!s->original_image){g_warning("Open failed: %s",e?e->message:"unknown");g_clear_error(&e);}
+ return s->original_image;
 }
-
-void pixbuf_scale_surface_from_widget(struct swappy_state *state,
-                                      GtkWidget *widget) {
-  GtkAllocation *alloc = g_new(GtkAllocation, 1);
-  GdkPixbuf *image = state->original_image;
-  gtk_widget_get_allocation(widget, alloc);
-
-  cairo_format_t format = CAIRO_FORMAT_ARGB32;
-  gint image_width = gdk_pixbuf_get_width(image);
-  gint image_height = gdk_pixbuf_get_height(image);
-
-  cairo_surface_t *original_image_surface =
-      cairo_image_surface_create(format, image_width, image_height);
-
-  if (!original_image_surface) {
-    g_error("unable to create cairo original surface from pixbuf");
-    goto finish;
-  } else {
-    cairo_t *cr;
-    cr = cairo_create(original_image_surface);
-    gdk_cairo_set_source_pixbuf(cr, image, 0, 0);
-    cairo_paint(cr);
-    cairo_destroy(cr);
-  }
-
-  cairo_surface_t *rendering_surface =
-      cairo_image_surface_create(format, image_width, image_height);
-
-  if (!rendering_surface) {
-    g_error("unable to create rendering surface");
-    goto finish;
-  }
-
-  g_info("size of area to render: %ux%u", alloc->width, alloc->height);
-
-finish:
-  if (state->original_image_surface) {
-    cairo_surface_destroy(state->original_image_surface);
-    state->original_image_surface = NULL;
-  }
-  state->original_image_surface = original_image_surface;
-
-  if (state->rendering_surface) {
-    cairo_surface_destroy(state->rendering_surface);
-    state->rendering_surface = NULL;
-  }
-  state->rendering_surface = rendering_surface;
-
-  g_free(alloc);
-}
-
-void pixbuf_free(struct swappy_state *state) {
-  if (G_IS_OBJECT(state->original_image)) {
-    g_object_unref(state->original_image);
-  }
-}
+void pixbuf_free(struct swappy_state *s){if(s->original_image)g_object_unref(s->original_image);}
