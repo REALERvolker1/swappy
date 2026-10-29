@@ -3,7 +3,7 @@
 #include <glib.h>
 #include <stdio.h>
 
-#include "gtk/gtk.h"
+
 #include "selection.h"
 #include "util.h"
 
@@ -214,62 +214,24 @@ void paint_update_temporary_str(struct swappy_state *state, char *str) {
   text->cursor += g_utf8_strlen(str, -1);
 }
 
-void paint_update_temporary_text(struct swappy_state *state,
-                                 GdkEventKey *event) {
+void paint_update_temporary_text(struct swappy_state *state, RKey key) {
   struct swappy_paint *paint = state->temp_paint;
-  struct swappy_paint_text *text;
-  char *new_text;
-  char buffer[32];
-  guint32 unicode;
-
-  if (!paint || paint->type != SWAPPY_PAINT_MODE_TEXT) {
-    g_warning("trying to update text but not in text mode");
-    return;
+  if (!paint || paint->type != SWAPPY_PAINT_MODE_TEXT) return;
+  struct swappy_paint_text *text = &paint->content.text;
+  char *updated = NULL;
+  switch (key) {
+  case R_KEY_ESCAPE: case R_KEY_ENTER: paint_commit_temporary(state); return;
+  case R_KEY_BACKSPACE:
+    if (text->cursor > 0) { updated = string_remove_at(text->text, text->cursor - 1); cursor_move_backward(text); }
+    break;
+  case R_KEY_DELETE:
+    if (text->cursor < g_utf8_strlen(text->text, -1)) updated = string_remove_at(text->text, text->cursor);
+    break;
+  case R_KEY_LEFT: cursor_move_backward(text); break;
+  case R_KEY_RIGHT: cursor_move_forward(text); break;
+  default: break;
   }
-
-  text = &paint->content.text;
-
-  switch (event->keyval) {
-    case GDK_KEY_Escape:
-      paint_commit_temporary(state);
-      break;
-    case GDK_KEY_BackSpace:
-      if (g_utf8_strlen(text->text, -1) > 0) {
-        new_text = string_remove_at(text->text, text->cursor - 1);
-        g_free(text->text);
-        text->text = new_text;
-        cursor_move_backward(text);
-      }
-      break;
-    case GDK_KEY_Delete:
-      if (g_utf8_strlen(text->text, -1) > 0) {
-        new_text = string_remove_at(text->text, text->cursor);
-        g_free(text->text);
-        text->text = new_text;
-      }
-      break;
-    case GDK_KEY_Left:
-      cursor_move_backward(text);
-      break;
-    case GDK_KEY_Right:
-      cursor_move_forward(text);
-      break;
-    case GDK_KEY_V:
-      cursor_move_forward(text);
-      break;
-    default:
-      unicode = gdk_keyval_to_unicode(event->keyval);
-      if (unicode != 0) {
-        int ll = g_unichar_to_utf8(unicode, buffer);
-        buffer[ll] = '\0';
-        char *new_text =
-            string_insert_chars_at(text->text, buffer, text->cursor);
-        g_free(text->text);
-        text->text = new_text;
-        text->cursor++;
-      }
-      break;
-  }
+  if (updated) { g_free(text->text); text->text = updated; }
 }
 
 void paint_update_temporary_text_clip(struct swappy_state *state, gdouble x,
@@ -285,7 +247,6 @@ void paint_update_temporary_text_clip(struct swappy_state *state, gdouble x,
   paint->can_draw = true;
   paint->content.text.to.x = x;
   paint->content.text.to.y = y;
-  gtk_im_context_focus_in(state->ui->im_context);
 }
 
 void paint_commit_temporary(struct swappy_state *state) {
@@ -312,8 +273,6 @@ void paint_commit_temporary(struct swappy_state *state) {
     paint->is_committed = true;
     state->paints = g_list_prepend(state->paints, paint);
   }
-
-  gtk_im_context_focus_out(state->ui->im_context);
   // Set the temporary paint to NULL but keep the content in memory
   // because it's now part of the GList.
   state->temp_paint = NULL;

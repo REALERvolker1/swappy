@@ -1,11 +1,12 @@
 #include <glib.h>
-#include <gtk/gtk.h>
+#include <cairo/cairo.h>
 #include <math.h>
 #include <pango/pangocairo.h>
 
 #include "algebra.h"
 #include "swappy.h"
 #include "util.h"
+#include "pixbuf.h"
 
 #define pango_layout_t PangoLayout
 #define pango_font_description_t PangoFontDescription
@@ -215,9 +216,7 @@ static void render_text(cairo_t *cr, struct swappy_paint_text text,
     cairo_set_source_rgba(crt, 0.3, 0.3, 0.3, 1);
     cairo_line_to(crt, cursor_box.x, cursor_box.y + cursor_box.height);
     cairo_stroke(crt);
-    GdkRectangle area = {x + cursor_box.x, y + cursor_box.y + cursor_box.height,
-                         0, 0};
-    gtk_im_context_set_cursor_location(state->ui->im_context, &area);
+
   }
 
   cairo_rectangle(crt, 0, 0, w, h);
@@ -535,6 +534,5 @@ void render_state(struct swappy_state *state) {
 
   cairo_destroy(cr);
 
-  // Drawing is finished, notify the GtkDrawingArea it needs to be redrawn.
-  gtk_widget_queue_draw(state->ui->area);
+  pixbuf_upload_texture(state);
 }

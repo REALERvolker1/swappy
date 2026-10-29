@@ -1,7 +1,9 @@
 #pragma once
 
-#include <glib-2.0/glib.h>
-#include <gtk/gtk.h>
+#include <glib.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
+#include <cairo/cairo.h>
+#include <Raven.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -125,47 +127,13 @@ struct swappy_state_settings {
 };
 
 struct swappy_state_ui {
-  gboolean panel_toggled;
-  gboolean ocr_active;
-
-  GtkWindow *window;
-  GtkIMContext *im_context;
-
-  GtkWidget *area;
-  GtkWidget *ocr_overlay;
-
-  GtkToggleButton *panel_toggle_button;
-
-  // Undo / Redo
-  GtkButton *undo;
-  GtkButton *redo;
-  GtkToggleButton *ocr;
-  GtkToggleButton *selection;
-  GtkButton *crop;
-
-  // Painting Area
-  GtkBox *painting_box;
-  GtkRadioButton *brush;
-  GtkRadioButton *text;
-  GtkRadioButton *rectangle;
-  GtkRadioButton *ellipse;
-  GtkRadioButton *arrow;
-  GtkRadioButton *blur;
-
-  GtkRadioButton *red;
-  GtkRadioButton *green;
-  GtkRadioButton *blue;
-  GtkRadioButton *custom;
-  GtkColorButton *color;
-
-  GtkButton *line_size;
-  GtkButton *text_size;
-  GtkButton *transparency;
-  GtkButton *transparency_plus;
-  GtkButton *transparency_minus;
-
-  GtkToggleButton *fill_shape;
-  GtkToggleButton *transparent;
+ Rid window, canvas, toolbar, overlay;
+ Rid mode_buttons[7], size_input, text_input, opacity_input;
+ Rid fill_button, transparent_button, selection_button, crop_button;
+ Rid undo_button, redo_button;
+ bool dragging, selecting, panel_toggled;
+ float image_x, image_y, image_width, image_height;
+ int window_width, window_height;
 };
 
 struct swappy_config {
@@ -186,37 +154,19 @@ struct swappy_config {
 };
 
 struct swappy_state {
-  GtkApplication *app;
-
-  struct swappy_state_ui *ui;
-  struct swappy_config *config;
-
-  GdkPixbuf *original_image;
-  cairo_surface_t *original_image_surface;
-  cairo_surface_t *rendering_surface;
-
-  gdouble scaling_factor;
-
-  enum swappy_paint_type mode;
-
-  /* Options */
-  char *file_str;
-  char *output_file;
-  char *save_file;
-  GtkFileChooserNative *save_dialog;
-
-  char *temp_file_str;
-
-  struct swappy_box *window;
-  struct swappy_box *geometry;
-
-  GList *paints;
-  GList *redo_paints;
-  struct swappy_paint *temp_paint;
-
-  struct swappy_state_settings settings;
-  struct swappy_selection selection;
-
-  int argc;
-  char **argv;
+ struct swappy_state_ui *ui;
+ struct swappy_config *config;
+ GdkPixbuf *original_image;
+ cairo_surface_t *original_image_surface, *rendering_surface;
+ Rid image_texture;
+ gdouble scaling_factor;
+ enum swappy_paint_type mode;
+ char *file_str, *output_file, *save_file, *temp_file_str;
+ struct swappy_box *window, *geometry;
+ GList *paints, *redo_paints;
+ struct swappy_paint *temp_paint;
+ struct swappy_state_settings settings;
+ struct swappy_selection selection;
+ int argc;
+ char **argv;
 };
